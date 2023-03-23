@@ -1,0 +1,98 @@
+---
+title: "Comp_Epi"
+output: html_document
+date: "2023-03-23"
+---
+
+```{r}
+setwd('/rds/general/project/hda-22-23/live/Comp_Epi/General/group5')
+
+
+library(readr)
+
+baseline_clinical <- readRDS('./data/baseline_data_clinical.rds')
+baseline_covariates <- readRDS('./data/baseline_data_covariates.rds')
+longitudinal_clinical <- readRDS('./data/longitudinal_data_clinical.rds')
+
+data_clinical <- read_tsv(file = './data/data_clinical.tsv')
+
+length(unique(baseline_clinical$id)) == nrow(baseline_clinical)
+length(unique(baseline_covariates$id)) == nrow(baseline_covariates)
+length(unique(longitudinal_clinical$id)) == nrow(longitudinal_clinical)
+
+
+baseline_all <- merge(x=baseline_clinical,y=baseline_covariates, 
+                      by="id", all.x=TRUE)
+
+
+baseline_all_cohort_A <- subset(baseline_all, cohort == 'cohort_a')
+baseline_all_cohort_B <- subset(baseline_all, cohort == 'cohort_b')
+baseline_all_cohort_C <- subset(baseline_all, cohort == 'cohort_c')
+baseline_all_cohort_D <- subset(baseline_all, cohort == 'cohort_d')
+
+
+num_cohorts <- c(nrow(baseline_all_cohort_A), nrow(baseline_all_cohort_B), nrow(baseline_all_cohort_C), nrow(baseline_all_cohort_D))
+
+barplot(num_cohorts, names=c('A', 'B', 'C', 'D'), xlab = 'Cohort', ylab = 'Number of Participants')
+# A = severe nonsmoking asthma (SAn)
+# B = smokers and ex-smokers with severe asthma (SAs/ex)
+# C = mild/moderate nonsmoking asthmatics (MMA)
+# D = healthy nonsmoking controls (HC)
+
+
+library(tidyverse)
+
+# Proteins ----
+install.packages("openxlsx")
+library(openxlsx)
+proteins = read_csv("./data/UB1st_submit20220729.csv")
+baseline = readRDS("./data/baseline_data_clinical.rds")
+sample_key = read.xlsx("./data/Sample_key_16Aug2022.xlsx")
+
+dim(sample_key)
+
+head(proteins)
+
+sample_key <- sample_key[, 11:18]
+view(sample_key)
+
+names(proteins)[names(proteins) == "KIT ID"] <- "KIT.ID"
+
+
+mydata = merge(sample_key[c("KIT.ID", "TranSMART.Allocation.ID","Comment")], proteins, by="KIT.ID")
+table(table(mydata$TranSMART.Allocation.ID))
+
+
+###########
+
+newdata = mydata %>% mutate(id = TranSMART.Allocation.ID) %>% select(-TranSMART.Allocation.ID) %>%
+  merge(baseline_all[c("id","cohort")], by = "id")
+table(table(newdata$id)) # 299 participants with repeating measurements
+table(newdata$cohort[!duplicated(newdata$id)])
+
+proteins_baseline <- subset(newdata, Comment=='Adult baseline')
+
+
+baseline_all_no_proteins <- baseline_all
+baseline_all <- merge(baseline_all_no_proteins, proteins_baseline, by='id')
+
+#QC-----
+baseline_all <- subset(baseline_all, C)
+
+names(baseline_all[,45:69])
+
+
+
+###------------------------------------------------------------------------------------------
+
+
+
+```
+
+
+
+
+
+
+
+
