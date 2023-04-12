@@ -6,8 +6,8 @@ severity/subtypes.
 * Overarching Aim: Explore which of the 23 proteins are jointly predictive of asthma status, subtype and severity 
 
 ## Steps
-1. Dta pre-processing, filtering and exploration
-2. exploratory analyses
+1. Data pre-processing, filtering and exploration
+2. Exploratory analyses
 3. Feature selection of each outcome of interest 
 4. Devising a clinical score 
 5. Explore proteomic signatures of the clinical score 
