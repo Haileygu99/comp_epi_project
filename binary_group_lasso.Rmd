@@ -1,0 +1,347 @@
+---
+title: "Binary Group Lasso"
+author: "02343497"
+date: "2023-04-13"
+output: html_document
+---
+```{r}
+install.packages("gglasso")
+```
+
+```{r}
+install.packages("grpreg")
+```
+
+
+```{r}
+# load the necessary package 
+library(glmnet)
+library(dplyr)
+library(corrplot)
+library(gglasso)
+library(grpreg)
+```
+
+```{r}
+# load data 
+data <- read.csv("imputed_baseline.csv")
+```
+
+```{r}
+data$case<- ifelse(data$cohort.x %in% c("cohort_a", "cohort_b","cohort_c"), "1", "0")
+table(data$case)
+```
+```{r}
+# Convert the response variable to numeric
+data$case <- as.numeric(data$case)
+```
+
+
+```{r}
+
+# Create a list of all variables
+variables <- c("CCL18", "CCL5", "i.TAC", "TARC", "MIP.1a", "MIG", "CCL20", "IP.10", "CTACK",
+               "IL.10", "IL.16", "IL17", "TSLP", "IL.4", "IL.5",
+               "PAPP.A", "KL.6", "MPO", "EDN",
+               "IL18", "SP.A", "IL.6", "TNF.A")
+
+# Create a grouping variable based on the functional categories
+group <- rep(NA, length(variables))
+
+group[variables %in% c("CCL18", "CCL5", "i.TAC", "TARC", "MIP.1a", "MIG", "CCL20", "IP.10", "CTACK")] <- 1
+group[variables %in% c("IL.10", "IL.16", "IL17", "TSLP", "IL.4", "IL.5")] <- 2
+group[variables %in% c("PAPP.A", "KL.6", "MPO", "EDN")] <- 3
+group[variables %in% c("IL18", "SP.A", "IL.6", "TNF.A")] <- 4
+
+# Define the groups
+groups <- group
+
+
+# Assuming 'data' is your data frame containing the variables
+X <- as.matrix(data[, variables])
+
+# Define the response variable (y)
+# Replace 'response' with the name of the response variable in your data frame
+y <- data$case
+
+# Set the regularization parameter
+lambda <- 0.1
+
+# Fit the binary group Lasso model
+fit <- grpreg(X, y, group = groups, family = "binomial")
+
+# Get the coefficients
+coefficients <- coef(fit)
+
+```
+
+
+```{r}
+print(coefficients)
+```
+
+
+
+
+```{r}
+# Generate a sequence of lambda values to search over
+lambdas <- exp(seq(-4, 0, length.out = 50))
+
+# Prepare a matrix for cross-validated errors
+cv_errors <- matrix(0, nrow = length(lambdas), ncol = 5)
+
+# Perform cross-validation
+set.seed(42)
+nfolds <- 5
+fold_indices <- split(sample(seq_len(nrow(X)), size = nrow(X), replace = FALSE), rep(1:nfolds, length.out = nrow(X)))
+
+for (i in seq_along(lambdas)) {
+  lambda <- lambdas[i]
+  
+  for (j in 1:nfolds) {
+    test_indices <- fold_indices[[j]]
+    train_indices <- unlist(fold_indices[-j], use.names = FALSE)
+    
+    fit <- grpreg(X[train_indices,], y[train_indices], group = groups, family = "binomial", lambda = lambda)
+    
+    # Compute the prediction error for the current fold
+    preds <- predict(fit, X[test_indices,], type = "response")
+    test_error <- mean((y[test_indices] - preds)^2)
+    cv_errors[i, j] <- test_error
+  }
+}
+
+# Calculate the mean cross-validated error for each lambda
+mean_cv_errors <- colMeans(cv_errors)
+
+# Get the best lambda
+best_lambda <- lambdas[which.min(mean_cv_errors)]
+cat("Best lambda:", best_lambda)
+
+```
+
+
+```{r}
+# Fit the binary group Lasso model with the best lambda value
+fit_best <- grpreg(X, y, group = groups, family = "binomial", lambda = best_lambda)
+
+# Get the coefficients with the best lambda value
+coefficients_best <- coef(fit_best)
+
+# Create a data frame with feature index and coefficients
+coef_df <- data.frame(FeatureIndex = 1:length(coefficients_best), CoefficientValue = unlist(coefficients_best))
+
+# Plot the coefficients
+ggplot(coef_df, aes(x = FeatureIndex, y = CoefficientValue)) +
+  geom_bar(stat = "identity") +
+  theme_minimal() +
+  labs(x = "Feature Index", y = "Coefficient Value", title = "Binary Group Lasso Coefficients (Best Lambda)")
+
+```
+
+```{r}
+# Fit the binary group Lasso model with the best lambda value
+fit_best <- grpreg(X, y, group = groups, family = "binomial", lambda = best_lambda)
+
+# Get the coefficients with the best lambda value
+coefficients_best <- coef(fit_best)
+
+# Print the coefficients with the best lambda value
+print(coefficients_best)
+
+```
+
+To interpret the coefficients:
+
+Intercept: The first row represents the intercept, which is the expected value of the response variable when all the features have a value of 0.
+
+Coefficients: The other rows represent the coefficients for each feature. These coefficients show the strength and direction of the relationship between each feature and the binary response variable, after accounting for the relationships among all other features in the model.
+
+Penalty parameter (lambda): The columns represent different values of the penalty parameter. As the value of the penalty parameter increases from left to right, the Lasso penalty becomes stronger, resulting in more coefficients being pushed to zero. A larger penalty parameter encourages sparsity and may lead to a more interpretable model at the cost of potential loss of accuracy.
+
+To choose the best model, you can use cross-validation to determine which value of the penalty parameter results in the lowest prediction error. Once you have selected the optimal penalty parameter, you can interpret the coefficients for that model as follows:
+
+Magnitude: The larger the absolute value of a coefficient, the stronger the relationship between the corresponding feature and the response variable. A coefficient with a value close to zero indicates that the corresponding feature has little or no effect on the response variable.
+
+Sign: The sign of the coefficient (positive or negative) indicates the direction of the relationship between the feature and the response variable. A positive coefficient suggests that an increase in the feature value is associated with an increase in the likelihood of the response variable being 1 (or the positive class). A negative coefficient suggests that an increase in the feature value is associated with a decrease in the likelihood of the response variable being 1.
+
+Sparsity: Due to the group Lasso penalty, some coefficients may be exactly zero. This means that the corresponding feature is not contributing to the model and can be considered as irrelevant for predicting the response variable.
+
+Remember that interpreting the coefficients alone might not give a full understanding of the model performance. You should also evaluate the model using appropriate metrics like accuracy, precision, recall, F1-score, or AUC-ROC, depending on the specific problem and the objectives.
+
+
+
+
+
+till here 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+library(ggplot2)
+
+# Create a data frame with feature index and coefficients
+coef_df <- data.frame(FeatureIndex = 1:length(coefficients), CoefficientValue = as.numeric(coefficients))
+
+# Plot the coefficients
+ggplot(coef_df, aes(x = FeatureIndex, y = CoefficientValue)) +
+  geom_bar(stat = "identity") +
+  theme_minimal() +
+  labs(x = "Feature Index", y = "Coefficient Value", title = "Binary Group Lasso Coefficients")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+# Create a list of all variables
+variables <- c("CCL18", "CCL5", "i.TAC", "TARC", "MIP.1a", "MIG", "CCL20", "IP.10", "CTACK",
+               "IL.10", "IL.16", "IL17", "TSLP", "IL.4", "IL.5",
+               "PAPP.A", "KL.6", "MPO", "EDN",
+               "IL18", "SP.A", "IL.6", "TNF.A")
+
+# Create a grouping variable based on the functional categories
+group <- rep(NA, length(variables))
+
+group[variables %in% c("CCL18", "CCL5", "i.TAC", "TARC", "MIP.1a", "MIG", "CCL20", "IP.10", "CTACK")] <- 1
+group[variables %in% c("IL.10", "IL.16", "IL17", "TSLP", "IL.4", "IL.5")] <- 2
+group[variables %in% c("PAPP.A", "KL.6", "MPO", "EDN")] <- 3
+group[variables %in% c("IL18", "SP.A", "IL.6", "TNF.A")] <- 4
+
+# Define the groups
+groups <- group
+
+```
+
+```{r}
+# Set the regularization parameter
+alpha <- 0.1
+```
+
+```{r}
+# Assuming 'data' is your data frame containing the variables
+X <- as.matrix(data[, variables])
+```
+
+
+```{r}
+# Define the response variable (y)
+# Replace 'response' with the name of the response variable in your data frame
+y <- data$case
+```
+
+```{r}
+# Set the regularization parameter
+lambda <- 0.1
+```
+
+
+
+```{r}
+# Fit the gglasso model
+fit <- gglasso(X, groups=groups, alpha=alpha, verbose=FALSE)
+```
+
+
+```{r}
+# Create a grouping variable based on the functional categories
+group <- rep(1:4, )
+group[c("CCL18", "CCL5", "i.TAC", "TARC", "MIP.1a", "MIG", "CCL20", "IP.10", "CTACK")] <- "Group 1"
+group[c("IL.10", "IL.16", "IL17", "TSLP", "IL.4", "IL.5")] <- "Group 2"
+group[c("PAPP.A", "KL.6", "MPO", "EDN")] <- "Group 3"
+group[c("IL18", "SP.A", "IL.6", "TNF.A")] <- "Group 4"
+
+
+# Subset data to only include the 23 protein predictors
+protein_data <- data[, c("CCL18", "CCL5", "i.TAC", "TARC", "MIP.1a", "MIG", "CCL20", "IP.10", "CTACK",
+                         "IL.10", "IL.16", "IL17", "TSLP", "IL.4", "IL.5", 
+                         "PAPP.A", "KL.6", "MPO", "EDN", 
+                         "IL18", "SP.A", "IL.6", "TNF.A")]
+
+
+# Create a design matrix for the predictors
+protein_matrix <- as.matrix(protein_data)
+group <- c(rep("Group 1", 9), rep("Group 2", 6), rep("Group 3", 4), rep("Group 4", 4))
+combined_matrix <- cbind(protein_matrix, group)
+
+
+
+# Fit group lasso
+fit <- gglasso(x=cbind(protein_matrix, group), y = data$case, group = group, loss = "logit")
+
+# The coefficients at lambda = 0.01 and 0.02
+coef(fit, s = c(0.01, 0.02))
+```
+
+```{r}
+# Check column names of data
+colnames(data)
+```
+
+
+
+
+
+
+
+
+
+```{r}
+# Add grouping variable to data
+protein_data_with_group <- cbind(data, group)
+```
+
+
+
+
+```{r}
+data$case<- ifelse(data$cohort.x %in% c("cohort_a", "cohort_b","cohort_c"), "1", "0")
+table(data$case)
+```
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
